@@ -1,0 +1,65 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Django stuff:
+*.log
+*.pot
+*.pyc
+local_settings.py
+db.sqlite3
+media
+mediafiles/
+staticfiles/
+.env
+.env.*
+
+# Pytest
+.pytest_cache/
+
+# VS Code
+.vscode/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# PyCharm
+.idea/
+
+# pipenv / poetry
+Pipfile.lock
+poetry.lock
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Django migrations (optional: se você versionar, remova essa linha)
+!**/migrations/__init__.py
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Test output
+junit.xml
+coverage.xml
+
+# Build
+build/
+dist/
+*.egg-info/
+.eggs/
