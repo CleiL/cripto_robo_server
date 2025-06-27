@@ -152,6 +152,7 @@ REST_FRAMEWORK = {
 FIELD_ENCRYPTION_KEY = config("FIELD_ENCRYPTION_KEY")
 
 SIMPLE_JWT = {
+    'AUTH_HEADER_TYPES': ('Bearer',),
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
 }
@@ -161,5 +162,11 @@ AUTH_USER_MODEL = 'accounts.CustomUser'
 MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'accounts.authentication.EmailBackend',  # caminho pode variar
+]
+
 
 load_dotenv()
