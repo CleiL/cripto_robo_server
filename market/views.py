@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from binance.client import Client
 from datetime import datetime
+from django.utils.dateparse import parse_date
 import os
 import time
 import statistics
@@ -327,3 +328,136 @@ class CandleWithBBView(APIView):
                 data[i]['bbLower'] = None
 
         return Response(data, status=200)
+
+
+class CandleAnalysisView(APIView):
+    def get(self, request, symbol, medium_fast, medium_slow):
+        try:
+            medium_fast = int(medium_fast)
+            medium_slow = int(medium_slow)
+        except ValueError:
+            return Response({"detail": "Parâmetros de média inválidos."}, status=400)
+
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+        rsi_overbought = float(request.GET.get("rsi_overbought", 70))
+        rsi_oversold = float(request.GET.get("rsi_oversold", 30))
+
+        queryset = CandleJson.objects.filter(symbol=symbol).order_by("timestamp")
+        if start_date:
+            queryset = queryset.filter(timestamp__gte=parse_date(start_date))
+        if end_date:
+            queryset = queryset.filter(timestamp__lte=parse_date(end_date))
+
+        candles = list(queryset)
+        if not candles:
+            return Response([], status=200)
+
+        closes = [c.data.get("close") for c in candles]
+
+        for i in range(len(candles)):
+            c = candles[i]
+
+            # Média móvel rápida
+            c.mediumFast = (
+                sum(closes[i - medium_fast + 1:i + 1]) / medium_fast
+                if i >= medium_fast - 1 else None
+            )
+
+            # Média móvel lenta
+            c.mediumSlow = (
+                sum(closes[i - medium_slow + 1:i + 1]) / medium_slow
+                if i >= medium_slow - 1 else None
+            )
+
+            # RSI
+            period_rsi = 14
+            if i >= period_rsi:
+                gains, losses = [], []
+                for j in range(i - period_rsi + 1, i + 1):
+                    delta = closes[j] - closes[j - 1]
+                    gains.append(delta if delta > 0 else 0)
+                    losses.append(-delta if delta < 0 else 0)
+                avg_gain = sum(gains) / period_rsi
+                avg_loss = sum(losses) / period_rsi
+                if avg_loss == 0:
+                    c.rsi = 100
+                else:
+                    rs = avg_gain / avg_loss
+                    c.rsi = round(100 - (100 / (1 + rs)), 2)
+            else:
+                c.rsi = None
+
+            # Bandas de Bollinger
+            period_bb = 20
+            if i >= period_bb - 1:
+                bb_closes = closes[i - period_bb + 1:i + 1]
+                sma = sum(bb_closes) / period_bb
+                std = (sum((x - sma) ** 2 for x in bb_closes) / period_bb) ** 0.5
+                c.bbUpper = round(sma + 2 * std, 2)
+                c.bbLower = round(sma - 2 * std, 2)
+            else:
+                c.bbUpper = None
+                c.bbLower = None
+
+        # Sinais de compra e venda
+        for i in range(1, len(candles)):
+            atual = candles[i]
+            anterior = candles[i - 1]
+
+            if not all([
+                anterior.mediumFast, anterior.mediumSlow,
+                atual.mediumFast, atual.mediumSlow,
+                atual.rsi, atual.data.get("close")
+            ]):
+                continue
+
+            cruzamento_compra = anterior.mediumFast < anterior.mediumSlow and atual.mediumFast > atual.mediumSlow
+            cruzamento_venda = atual.mediumFast < atual.mediumSlow
+
+            if cruzamento_compra and atual.rsi < rsi_oversold:
+                atual.signal = "COMPRA"
+            elif cruzamento_venda and atual.rsi > rsi_overbought:
+                atual.signal = "VENDA"
+            else:
+                atual.signal = None
+
+        for c in candles:
+            close = c.data.get("close")
+            ma_max = getattr(c, 'mediumFast', None)
+            ma_min = getattr(c, 'mediumSlow', None)
+
+            if close and ma_max and ma_min:
+                if close > ma_max:
+                    c.sinalCompra = 1
+                    c.sinalVenda = 0
+                elif close < ma_min:
+                    c.sinalCompra = 0
+                    c.sinalVenda = 1
+                else:
+                    c.sinalCompra = 0
+                    c.sinalVenda = 0
+            else:
+                c.sinalCompra = 0
+                c.sinalVenda = 0
+
+
+        # Montar resposta
+        response_data = []
+        for c in candles:
+            response_data.append({
+                "symbol": c.symbol,
+                "timestamp": c.timestamp,
+                "data": c.data,
+                "mediumFast": getattr(c, 'mediumFast', None),
+                "mediumSlow": getattr(c, 'mediumSlow', None),
+                "rsi": getattr(c, 'rsi', None),
+                "bbUpper": getattr(c, 'bbUpper', None),
+                "bbLower": getattr(c, 'bbLower', None),
+                "signal": getattr(c, 'signal', None),
+                "sinalCompra": getattr(c, 'sinalCompra', 0),
+                "sinalVenda": getattr(c, 'sinalVenda', 0),
+            })
+
+
+        return Response(response_data, status=200)
